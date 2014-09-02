@@ -71,7 +71,7 @@ module.exports = function(opts){
           // new Buffer(string, 'base64') does not seem to crash
           // when `string` is not base64-encoded.
           // but `JSON.parse(string)` will crash.
-          if (!(err instanceof SyntaxError)) throw err;
+          if (!(err instanceof SyntaxError) && !(err instanceof TypeError)) throw err;
           sess = new Session(req);
         }
       } else {
