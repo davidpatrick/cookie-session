@@ -59,10 +59,10 @@ module.exports = function(opts){
       if (json) {
         debug('parse %s', json);
         try {
-          if (opts.encrypted) {
+          if (opts.encrypted){
             decoded = decrypt(keys, json);
-          } else {
-            decoded = decode(keys, json);
+          }else{
+            decoded = decode(json);
           }
           sess = new Session(req, decoded);
         } catch (err) {
@@ -200,7 +200,7 @@ Session.prototype.save = function(){
   var encoded;
   if (opts.encrypted){
     encoded = encrypt(ctx.sessionEncryptionKeys, this);
-  } else{
+  }else{
     encoded = encode(this);
   }
   var json = this._json || encoded;
