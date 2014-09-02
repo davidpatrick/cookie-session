@@ -2,6 +2,7 @@
  * Module dependencies.
  */
 
+var crypto = require('crypto');
 var debug = require('debug')('cookie-session');
 var Cookies = require('cookies');
 
@@ -29,18 +30,22 @@ module.exports = function(opts){
   if (null == opts.overwrite) opts.overwrite = true;
   if (null == opts.httpOnly) opts.httpOnly = true;
   if (null == opts.signed) opts.signed = true;
+  if (null == opts.encrypted) opts.encrypted = true;
 
-  if (!keys && opts.signed) throw new Error('.keys required.');
+  if (!keys && (opts.signed || opts.encrypted)){
+    throw new Error('.keys required.');
+  }
 
   debug('session options %j', opts);
 
   return function cookieSession(req, res, next){
     var cookies = req.sessionCookies = new Cookies(req, res, keys);
-    var sess, json;
+    var sess, json, decoded;
 
     // to pass to Session()
     req.sessionOptions = opts;
     req.sessionKey = name;
+    req.sessionEncryptionKeys = keys;
 
     req.__defineGetter__('session', function(){
       // already retrieved
@@ -54,14 +59,19 @@ module.exports = function(opts){
       if (json) {
         debug('parse %s', json);
         try {
-          sess = new Session(req, decode(json));
+          if (opts.encrypted){
+            decoded = decrypt(keys, json);
+          }else{
+            decoded = decode(json);
+          }
+          sess = new Session(req, decoded);
         } catch (err) {
           // backwards compatibility:
           // create a new session if parsing fails.
           // new Buffer(string, 'base64') does not seem to crash
           // when `string` is not base64-encoded.
           // but `JSON.parse(string)` will crash.
-          if (!(err instanceof SyntaxError)) throw err;
+          if (!(err instanceof SyntaxError) && !(err instanceof TypeError)) throw err;
           sess = new Session(req);
         }
       } else {
@@ -87,7 +97,7 @@ module.exports = function(opts){
         cookies.set(name, '', opts);
       } else if (!json && !sess.length) {
         // do nothing if new and not populated
-      } else if (sess.changed(json)) {
+      } else if (sess.changed(keys, json)) {
         // save
         sess.save();
       }
@@ -142,9 +152,15 @@ Session.prototype.toJSON = function(){
  * @api private
  */
 
-Session.prototype.changed = function(prev){
+Session.prototype.changed = function(keys, prev){
   if (!prev) return true;
-  this._json = encode(this);
+  var ctx = this._ctx;
+  var opts = ctx.sessionOptions;
+  if (opts.encrypted){
+    this._json = encrypt(keys, this);
+  } else{
+    this._json = encode(this);
+  }
   return this._json != prev;
 };
 
@@ -180,7 +196,14 @@ Session.prototype.__defineGetter__('populated', function(){
 
 Session.prototype.save = function(){
   var ctx = this._ctx;
-  var json = this._json || encode(this);
+  var opts = ctx.sessionOptions;
+  var encoded;
+  if (opts.encrypted){
+    encoded = encrypt(ctx.sessionEncryptionKeys, this);
+  }else{
+    encoded = encode(this);
+  }
+  var json = this._json || encoded;
   var opts = ctx.sessionOptions;
   var name = ctx.sessionKey;
 
@@ -212,4 +235,37 @@ function decode(string) {
 function encode(body) {
   body = JSON.stringify(body);
   return new Buffer(body).toString('base64');
+}
+
+/**
+ * Decrypt the base64 cookie value to an object.
+ *
+ * @param {String[]} keys key[0] is used for decryption. There is no support
+ *                   multiple keys.
+ * @param {String} string
+ * @return {Object}
+ * @api private
+ */
+
+function decrypt(keys, string) {
+  var decipher = crypto.createDecipher('aes256', keys[0]);
+  var decrypted = decipher.update(string, 'base64', 'utf8') + decipher.final('utf8');
+  return JSON.parse(decrypted);
+}
+
+/**
+ * Encrypt an object into a base64 aes256-encrypted JSON string.
+ *
+ * @param {String[]} keys key[0] is used for encryption. There is no support
+ *                   multiple keys.
+ * @param {Object} body
+ * @return {String}
+ * @api private
+ */
+
+function encrypt(keys, body) {
+  body = JSON.stringify(body);
+  var cipher = crypto.createCipher('aes256', keys[0]);
+  var encrypted = cipher.update(body, 'utf8', 'base64') + cipher.final('base64');
+  return encrypted;
 }
