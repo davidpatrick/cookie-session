@@ -240,6 +240,8 @@ function encode(body) {
 /**
  * Decrypt the base64 cookie value to an object.
  *
+ * @param {String[]} keys key[0] is used for decryption. There is no support
+ *                   multiple keys.
  * @param {String} string
  * @return {Object}
  * @api private
@@ -254,6 +256,8 @@ function decrypt(keys, string) {
 /**
  * Encrypt an object into a base64 aes256-encrypted JSON string.
  *
+ * @param {String[]} keys key[0] is used for encryption. There is no support
+ *                   multiple keys.
  * @param {Object} body
  * @return {String}
  * @api private
